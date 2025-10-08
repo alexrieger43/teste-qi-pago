@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Brain, Lock, CreditCard, Shield, Award, Download, Star } from 'lucide-react'
+import { Brain, Lock, CreditCard, Shield, Award, Star, CheckCircle, Clock, X } from 'lucide-react'
 
 interface TestResult {
   score: number
@@ -20,6 +20,7 @@ export default function ResultadoPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [hasError, setHasError] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [paymentCancelled, setPaymentCancelled] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -27,6 +28,19 @@ export default function ResultadoPage() {
 
   useEffect(() => {
     if (!mounted) return
+
+    // Verificar se o pagamento já foi processado anteriormente
+    const checkPreviousPayment = () => {
+      try {
+        const paymentStatus = localStorage.getItem('qiTestPaymentComplete')
+        if (paymentStatus === 'true') {
+          setShowPayment(false)
+          setPaymentComplete(true)
+        }
+      } catch (error) {
+        console.error('Erro ao verificar pagamento anterior:', error)
+      }
+    }
 
     // Função para carregar resultado
     const loadResult = () => {
@@ -55,6 +69,8 @@ export default function ResultadoPage() {
       }
     }
 
+    checkPreviousPayment()
+    
     // Aguardar um pouco para garantir que estamos no cliente
     const timer = setTimeout(loadResult, 100)
     return () => clearTimeout(timer)
@@ -83,8 +99,36 @@ export default function ResultadoPage() {
   }
 
   const handlePayment = () => {
+    setPaymentProcessing(true)
+    setPaymentCancelled(false)
+    
     // Abrir link de pagamento em nova aba
-    window.open('https://pay.infinitepay.io/testede_qi/10,00/', '_blank')
+    const paymentWindow = window.open('https://pay.infinitepay.io/testede_qi/10,00/', '_blank')
+    
+    // Monitorar se a janela foi fechada
+    const checkClosed = setInterval(() => {
+      if (paymentWindow?.closed) {
+        clearInterval(checkClosed)
+        setPaymentProcessing(false)
+        
+        // Quando a janela é fechada, mostrar que o pagamento foi cancelado
+        // Em vez de assumir que foi pago
+        setPaymentCancelled(true)
+        
+        // Remover a mensagem de cancelamento após 5 segundos
+        setTimeout(() => {
+          setPaymentCancelled(false)
+        }, 5000)
+      }
+    }, 1000)
+    
+    // Limpar o intervalo após 5 minutos (caso a janela não seja fechada)
+    setTimeout(() => {
+      clearInterval(checkClosed)
+      if (paymentProcessing) {
+        setPaymentProcessing(false)
+      }
+    }, 300000) // 5 minutos
   }
 
   const formatTime = (seconds: number) => {
@@ -158,6 +202,27 @@ export default function ResultadoPage() {
   const iq = calculateIQ(result.score, result.totalQuestions)
   const iqInfo = getIQCategory(iq)
 
+  // Tela de pagamento processando
+  if (paymentProcessing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl max-w-md">
+          <CreditCard className="h-16 w-16 text-green-600 mx-auto mb-4 animate-pulse" />
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">Processando Pagamento</h2>
+          <p className="text-gray-600 mb-4">
+            Complete o pagamento na aba que foi aberta e volte aqui.
+          </p>
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p className="text-yellow-800 text-sm">
+              <strong>Importante:</strong> Não feche esta página! Após completar o pagamento, 
+              seu resultado será liberado automaticamente.
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (showPayment) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -172,6 +237,21 @@ export default function ResultadoPage() {
               Desbloqueie seu resultado detalhado
             </p>
           </div>
+
+          {/* Alerta de pagamento cancelado */}
+          {paymentCancelled && (
+            <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <X className="h-5 w-5 text-red-500 mr-3" />
+                <div>
+                  <h3 className="text-red-800 font-medium">Pagamento Cancelado</h3>
+                  <p className="text-red-700 text-sm">
+                    O pagamento foi cancelado ou não foi concluído. Para ver seu resultado, você precisa completar o pagamento.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid md:grid-cols-2 gap-8">
             {/* Preview do Resultado */}
@@ -229,10 +309,6 @@ export default function ResultadoPage() {
                   <span className="text-sm">Resultado detalhado do QI</span>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <Download className="h-5 w-5 text-green-500" />
-                  <span className="text-sm">Certificado digital em PDF</span>
-                </div>
-                <div className="flex items-center space-x-3">
                   <Brain className="h-5 w-5 text-green-500" />
                   <span className="text-sm">Análise detalhada das habilidades</span>
                 </div>
@@ -245,10 +321,11 @@ export default function ResultadoPage() {
               <button
                 type="button"
                 onClick={handlePayment}
-                className="w-full flex items-center justify-center px-6 py-4 font-semibold rounded-lg transform transition-all duration-300 shadow-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 hover:scale-105 lasy-highlight"
+                disabled={paymentProcessing}
+                className="w-full flex items-center justify-center px-6 py-4 font-semibold rounded-lg transform transition-all duration-300 shadow-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:from-green-700 hover:to-emerald-700 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
                 <CreditCard className="h-5 w-5 mr-2" />
-                Pagar R$10,00 e Ver Resultado
+                {paymentProcessing ? 'Processando...' : 'Pagar R$10,00 e Ver Resultado'}
               </button>
 
               <div className="mt-4 text-center">
@@ -271,7 +348,7 @@ export default function ResultadoPage() {
         {/* Header de Sucesso */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-green-100 rounded-full mb-4">
-            <Award className="h-8 w-8 text-green-600" />
+            <CheckCircle className="h-8 w-8 text-green-600" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Parabéns! Pagamento Confirmado
@@ -368,17 +445,14 @@ export default function ResultadoPage() {
           </div>
 
           {/* Ações */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="flex items-center justify-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-lg hover:from-blue-700 hover:to-indigo-700 transform hover:scale-105 transition-all duration-300">
-              <Download className="h-5 w-5 mr-2" />
-              Baixar Certificado PDF
-            </button>
+          <div className="flex justify-center">
             <button 
               onClick={() => {
-                // Limpar resultado do localStorage e voltar ao início
+                // Limpar resultado e status de pagamento do localStorage e voltar ao início
                 if (mounted) {
                   try {
                     localStorage.removeItem('qiTestResult')
+                    localStorage.removeItem('qiTestPaymentComplete')
                   } catch (error) {
                     console.error('Erro ao limpar localStorage:', error)
                   }
@@ -389,30 +463,6 @@ export default function ResultadoPage() {
             >
               Fazer Novo Teste
             </button>
-          </div>
-        </div>
-
-        {/* Certificado Preview */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 border-4 border-blue-100">
-          <div className="text-center">
-            <div className="flex justify-center mb-4">
-              <Award className="h-12 w-12 text-yellow-500" />
-            </div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Certificado de QI
-            </h2>
-            <p className="text-gray-600 mb-4">
-              Este certificado atesta que o portador obteve um QI de <strong>{iq}</strong> pontos
-              no teste padronizado aplicado em {mounted && new Date(result.timestamp).toLocaleDateString('pt-BR')}.
-            </p>
-            <div className="flex justify-center space-x-1 mb-4">
-              {[...Array(5)].map((_, i) => (
-                <Star key={i} className="h-6 w-6 text-yellow-400 fill-current" />
-              ))}
-            </div>
-            <p className="text-sm text-gray-500">
-              Certificado válido e reconhecido para fins educacionais e profissionais
-            </p>
           </div>
         </div>
       </div>
